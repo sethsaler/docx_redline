@@ -11,6 +11,7 @@ dependencies = ["python-docx>=1.1.0"]
 
 [project.scripts]
 docx-redline = "docx_redline.cli:main"
+docx-redline-gui = "docx_redline.gui:main"
 
 [tool.setuptools.packages.find]
 include = ["docx_redline*"]

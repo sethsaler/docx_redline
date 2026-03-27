@@ -35,17 +35,23 @@ If you already have the folder (copied from a USB drive, AirDrop, etc.):
    ```
 3. Done. Double-click **`run.command`** to use the tool.
 
-**Requirements:** macOS with Python 3.9 or later. If Python is not installed, `setup.sh` will download and install it automatically.
+**Requirements:** macOS with Python 3.9 or later. If Python is not installed, `setup.sh` will download and install it automatically. The double-click UI uses **Tk** (included with python.org Python on macOS). On Linux, install `python3-tk` if the window does not appear and the tool falls back to terminal prompts.
 
 ---
 
 ## How to Use
 
 1. Launch the tool (double-click `run.command` or run `./run.command`)
-2. Enter the path to the **original** `.docx` file
-3. Enter the path to the **modified** `.docx` file
-4. Press Enter to accept the default output path (or type your own)
-5. The tool generates a redlined `.docx` file with inline markup and an "Exhibit A — Change Report" at the end
+2. Click **Browse…** to pick the **original** and **modified** `.docx` files (no need to copy paths into a terminal)
+3. Optionally set the output path with **Browse…**, or leave it blank to use the default next to **Generate redline**
+4. Click **Generate redline**
+5. The tool writes a redlined `.docx` with inline markup and an "Exhibit A — Change Report" at the end
+
+**Terminal prompts (no file picker):** If you prefer typing paths, run:
+
+```bash
+.venv/bin/python -m docx_redline.cli_interactive
+```
 
 ### Command-line mode
 

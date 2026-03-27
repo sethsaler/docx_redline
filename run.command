@@ -15,7 +15,7 @@ if [ ! -d ".venv" ]; then
     echo ""
 fi
 
-.venv/bin/python -m docx_redline.cli_interactive
+.venv/bin/python -m docx_redline.gui
 echo ""
 echo "Done. Press Enter to exit."
 read
