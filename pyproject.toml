@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "docx-redline"
+version = "1.0.0"
+description = "CLI tool for redlining .docx files with word-level diff and change report"
+requires-python = ">=3.9"
+dependencies = ["python-docx>=1.1.0"]
+
+[project.scripts]
+docx-redline = "docx_redline.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["docx_redline*"]

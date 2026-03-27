@@ -1,0 +1,2 @@
+from docx_redline.differ import compare_documents
+from docx_redline.formatter import generate_redline
