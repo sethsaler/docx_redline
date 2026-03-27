@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import os
 import sys
 
 from docx_redline.formatter import generate_redline
+from docx_redline.paths import default_output_path, normalize_user_path, validate_docx_input_path
 
 
 def _prompt_file(label: str) -> str:
@@ -12,16 +12,13 @@ def _prompt_file(label: str) -> str:
         if not path:
             print("  Please enter a path.")
             continue
-        home = os.path.expanduser("~")
-        if path.startswith("~"):
-            path = home + path[1:]
-        if not os.path.isfile(path):
-            print(f"  File not found: {path}")
+        try:
+            normalized = normalize_user_path(path)
+            validate_docx_input_path(normalized)
+        except ValueError as e:
+            print(f"  {e}")
             continue
-        if not path.lower().endswith(".docx"):
-            print("  File must be a .docx file.")
-            continue
-        return os.path.abspath(path)
+        return normalized
 
 
 def main():
@@ -33,21 +30,18 @@ def main():
     original = _prompt_file("Original file path (the before version)")
     changed = _prompt_file("Changed file path  (the after version)")
 
-    orig_base = os.path.splitext(os.path.basename(original))[0]
-    changed_base = os.path.splitext(os.path.basename(changed))[0]
-    default_output = os.path.join(
-        os.getcwd(), f"redline_{orig_base}_vs_{changed_base}.docx"
-    )
+    default_output = default_output_path(original, changed)
 
     print()
     output = input(f"Output file path [{default_output}]: ").strip()
     if not output:
         output = default_output
 
-    home = os.path.expanduser("~")
-    if output.startswith("~"):
-        output = home + output[1:]
-    output = os.path.abspath(output)
+    try:
+        output = normalize_user_path(output)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
     print()
     print(f"Comparing:")
