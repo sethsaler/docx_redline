@@ -151,6 +151,22 @@ echo "  Installing docx-redline and dependencies..."
 .venv/bin/pip install . --quiet 2>/dev/null
 echo -e "  ${GREEN}Done.${RESET}"
 
+# Tk (tkinter) is required for the graphical file picker in run.command.
+if ! .venv/bin/python -c "import tkinter" 2>/dev/null; then
+    echo ""
+    echo -e "${YELLOW}  Note: Tk (tkinter) is not available in this Python.${RESET}"
+    echo -e "  The window with Browse buttons will not open; the tool will use terminal prompts instead."
+    echo ""
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        echo -e "  On macOS, install a Python build that includes Tcl/Tk, for example:"
+        echo -e "    ${CYAN}https://www.python.org/downloads/${RESET} (official installer — include Tcl/Tk)"
+        echo -e "  Or with Homebrew: ${CYAN}brew install python-tk${RESET} then point setup at that Python."
+    else
+        echo -e "  On Linux, install your distro's Tk package, e.g.: ${CYAN}sudo apt install python3-tk${RESET}"
+    fi
+    echo ""
+fi
+
 echo ""
 echo -e "${BOLD}Setup complete!${RESET}"
 echo ""

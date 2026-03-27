@@ -19,7 +19,17 @@ curl -sL https://raw.githubusercontent.com/sethsaler/docx_redline/main/install.s
 
 This downloads the tool to your Desktop and runs setup. If Python is missing, it will offer to install it for you.
 
+The installer tries **git clone** first; if that fails (VPN, firewall, or corporate network blocking Git), it **automatically falls back** to downloading a **ZIP** from GitHub over HTTPS.
+
 Once installed, launch it anytime by double-clicking **`run.command`** in the `docx_redline` folder.
+
+---
+
+## Troubleshooting
+
+**“The graphical file picker requires Tk (tkinter)”** — Your Python was built without Tk. Install a Python that includes Tcl/Tk (the official macOS installer from [python.org](https://www.python.org/downloads/) does), or on Linux install `python3-tk`, then delete the project’s `.venv` folder and run `bash setup.sh` again.
+
+**Git or curl install errors** — If `git clone` fails, use the latest `install.sh` from this repo (it falls back to ZIP). You can also download the ZIP manually: open `https://github.com/sethsaler/docx_redline/archive/refs/heads/main.zip`, unzip it, rename the folder to `docx_redline` on your Desktop, and run `bash setup.sh` inside it.
 
 ---
 

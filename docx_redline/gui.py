@@ -149,7 +149,8 @@ def main() -> None:
     except ImportError:
         print(
             "The graphical file picker requires Tk (tkinter). Falling back to terminal prompts.\n"
-            "On Linux, install your distro's python3-tk package if you want the windowed UI.",
+            "For the Browse window: use Python from python.org (macOS) with Tcl/Tk, "
+            "or `brew install python-tk`, or on Linux install `python3-tk`, then recreate `.venv` with setup.sh.",
             file=sys.stderr,
         )
         from docx_redline.cli_interactive import main as interactive_main
