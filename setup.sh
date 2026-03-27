@@ -20,6 +20,9 @@ echo "========================================"
 echo ""
 
 find_python() {
+    local require_tk=false
+    [ "$1" = "--require-tkinter" ] && require_tk=true
+
     local candidates=(
         "/opt/homebrew/bin/python3.14"
         "/opt/homebrew/bin/python3.13"
@@ -51,6 +54,9 @@ find_python() {
             local ver
             ver=$("$cmd" -c "import sys; v=sys.version_info; print(v.major*100+v.minor)" 2>/dev/null) || continue
             if [ "$ver" -ge 309 ] && [ "$ver" -gt "$best_v" ]; then
+                if [ "$require_tk" = true ]; then
+                    "$cmd" -c "import tkinter" 2>/dev/null || continue
+                fi
                 best="$cmd"
                 best_v="$ver"
             fi
@@ -58,6 +64,14 @@ find_python() {
     done
 
     echo "$best"
+}
+
+get_python_version() {
+    "$1" -c "import sys; v=sys.version_info; print(f'{v.major}.{v.minor}.{v.micro}')" 2>/dev/null
+}
+
+get_python_short() {
+    "$1" -c "import sys; v=sys.version_info; print(f'{v.major}.{v.minor}')" 2>/dev/null
 }
 
 install_python() {
@@ -115,28 +129,111 @@ install_python() {
     fi
 }
 
-# --- Step 1: Find or install Python ---
+ensure_tkinter() {
+    local python_cmd="$1"
+    local short_ver
+    short_ver=$(get_python_short "$python_cmd")
 
-PYTHON_CMD=$(find_python)
+    echo -e "${YELLOW}  Tkinter is not available for Python ${short_ver}.${RESET}"
+    echo "  The graphical file picker requires Tk (tkinter)."
+    echo ""
+    echo "  Attempting to install it automatically..."
+    echo ""
 
-if [ -z "$PYTHON_CMD" ]; then
-    install_python
+    if [[ "$(uname -s)" == "Darwin" ]] && command -v brew &>/dev/null; then
+        echo -e "  Installing ${CYAN}python-tk@${short_ver}${RESET} via Homebrew..."
+        echo ""
+        if brew install "python-tk@${short_ver}" 2>/dev/null; then
+            echo ""
+            echo -e "${GREEN}  python-tk@${short_ver} installed.${RESET}"
+            echo ""
+            return 0
+        else
+            echo ""
+            echo -e "${YELLOW}  Homebrew install of python-tk@${short_ver} failed or was not available.${RESET}"
+            echo ""
+        fi
+    fi
 
+    echo "  Could not install tkinter automatically."
+    echo ""
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        echo -e "  On macOS, you can get tkinter by:"
+        echo -e "    ${CYAN}brew install python-tk@${short_ver}${RESET}"
+        echo -e "    Or install Python from ${CYAN}https://www.python.org/downloads/${RESET} (includes Tcl/Tk)"
+    else
+        echo -e "  On Linux, install your distro's Tk package, e.g.: ${CYAN}sudo apt install python3-tk${RESET}"
+    fi
+    echo ""
+    echo -e "  The tool will fall back to terminal prompts instead of the graphical picker."
+    echo ""
+
+    return 1
+}
+
+# --- Step 1: Find or install Python (prefer tkinter-capable) ---
+
+PYTHON_CMD=$(find_python --require-tkinter)
+
+if [ -n "$PYTHON_CMD" ]; then
+    PY_VER=$(get_python_version "$PYTHON_CMD")
+    echo -e "  Found Python ${PY_VER} with GUI support  (${PYTHON_CMD})"
+else
     PYTHON_CMD=$(find_python)
 
     if [ -z "$PYTHON_CMD" ]; then
-        echo -e "${RED}Python was installed but could not be located.${RESET}"
-        echo "Please open a new Terminal window and re-run this script."
-        exit 1
+        install_python
+        PYTHON_CMD=$(find_python)
+
+        if [ -z "$PYTHON_CMD" ]; then
+            echo -e "${RED}Python was installed but could not be located.${RESET}"
+            echo "Please open a new Terminal window and re-run this script."
+            exit 1
+        fi
+    fi
+
+    PY_VER=$(get_python_version "$PYTHON_CMD")
+    echo -e "  Found Python ${PY_VER}  (${PYTHON_CMD})"
+
+    if ! "$PYTHON_CMD" -c "import tkinter" 2>/dev/null; then
+        echo ""
+        ensure_tkinter "$PYTHON_CMD" || true
+
+        TK_PYTHON=$(find_python --require-tkinter)
+        if [ -n "$TK_PYTHON" ] && [ "$TK_PYTHON" != "$PYTHON_CMD" ]; then
+            PYTHON_CMD="$TK_PYTHON"
+            PY_VER=$(get_python_version "$PYTHON_CMD")
+            echo -e "  Switched to Python ${PY_VER} with GUI support  (${PYTHON_CMD})"
+        fi
     fi
 fi
 
-PY_VER=$("$PYTHON_CMD" -c "import sys; v=sys.version_info; print(f'{v.major}.{v.minor}.{v.micro}')")
-echo -e "  Found Python ${PY_VER}  (${PYTHON_CMD})"
-
 # --- Step 2: Create virtual environment ---
 
+VENV_PYTHON=""
 if [ -d ".venv" ]; then
+    VENV_PYTHON=$(readlink .venv/bin/python 2>/dev/null || echo "")
+    if [ -n "$VENV_PYTHON" ]; then
+        VENV_PYTHON=$(cd .venv/bin && realpath "$VENV_PYTHON" 2>/dev/null || echo "")
+    fi
+fi
+
+CURRENT_BASE=$("$PYTHON_CMD" -c "import sys; print(sys.executable)" 2>/dev/null)
+if [ -n "$CURRENT_BASE" ]; then
+    CURRENT_BASE=$(realpath "$CURRENT_BASE" 2>/dev/null || echo "")
+fi
+
+if [ -d ".venv" ] && [ -n "$VENV_PYTHON" ] && [ -n "$CURRENT_BASE" ]; then
+    if [ "$VENV_PYTHON" != "$CURRENT_BASE" ]; then
+        echo ""
+        echo -e "${YELLOW}  Rebuilding virtual environment for the new Python...${RESET}"
+        rm -rf .venv
+        "$PYTHON_CMD" -m venv .venv
+        echo -e "  ${GREEN}Done.${RESET}"
+    else
+        echo -e "${GREEN}  Virtual environment already exists.${RESET} Reusing it."
+    fi
+elif [ -d ".venv" ]; then
     echo -e "${GREEN}  Virtual environment already exists.${RESET} Reusing it."
 else
     echo "  Creating virtual environment..."
@@ -151,16 +248,15 @@ echo "  Installing docx-redline and dependencies..."
 .venv/bin/pip install . --quiet 2>/dev/null
 echo -e "  ${GREEN}Done.${RESET}"
 
-# Tk (tkinter) is required for the graphical file picker in run.command.
+# --- Step 4: Final tkinter check ---
+
 if ! .venv/bin/python -c "import tkinter" 2>/dev/null; then
     echo ""
     echo -e "${YELLOW}  Note: Tk (tkinter) is not available in this Python.${RESET}"
     echo -e "  The window with Browse buttons will not open; the tool will use terminal prompts instead."
     echo ""
     if [[ "$(uname -s)" == "Darwin" ]]; then
-        echo -e "  On macOS, install a Python build that includes Tcl/Tk, for example:"
-        echo -e "    ${CYAN}https://www.python.org/downloads/${RESET} (official installer — include Tcl/Tk)"
-        echo -e "  Or with Homebrew: ${CYAN}brew install python-tk${RESET} then point setup at that Python."
+        echo -e "  To fix: run ${CYAN}brew install python-tk${RESET} and then delete .venv and re-run this script."
     else
         echo -e "  On Linux, install your distro's Tk package, e.g.: ${CYAN}sudo apt install python3-tk${RESET}"
     fi
