@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime as _dt
+
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_COLOR
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
@@ -7,7 +9,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
-from docx_redline.differ import Change, ChangeType, DiffSegment, ParagraphDiff
+from docx_redline.differ import Change, ChangeType, DiffSegment, ParagraphDiff, RunInfo
 
 RED = RGBColor(0xFF, 0x00, 0x00)
 DARK_GRAY = RGBColor(0x33, 0x33, 0x33)
@@ -16,6 +18,132 @@ LIGHT_GRAY = RGBColor(0xF2, 0xF2, 0xF2)
 HEADER_BG = RGBColor(0x1F, 0x4E, 0x79)
 WHITE = RGBColor(0xFF, 0xFF, 0xFF)
 TABLE_FONT = "Aptos"
+
+TRACK_AUTHOR = "DOCX Redline"
+
+
+def _enable_track_revisions(doc: Document) -> None:
+    settings_el = doc.settings._element
+    ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    for el in settings_el.findall(f"{{{ns}}}trackRevisions"):
+        settings_el.remove(el)
+    tr = OxmlElement("w:trackRevisions")
+    settings_el.append(tr)
+
+
+def _revision_date_iso() -> str:
+    return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _next_revision_id(counter: list[int]) -> str:
+    counter[0] += 1
+    return str(counter[0])
+
+
+def _revision_attrs(counter: list[int]) -> dict[str, str]:
+    return {
+        qn("w:id"): _next_revision_id(counter),
+        qn("w:author"): TRACK_AUTHOR,
+        qn("w:date"): _revision_date_iso(),
+    }
+
+
+def _deepcopy_rpr(rpr) -> OxmlElement | None:
+    if rpr is None:
+        return None
+    import copy
+
+    return copy.deepcopy(rpr)
+
+
+def _first_run_rpr_clone(paragraph) -> OxmlElement | None:
+    p_el = paragraph._element
+    r = p_el.find(qn("w:r"))
+    if r is None:
+        return None
+    return _deepcopy_rpr(r.find(qn("w:rPr")))
+
+
+def _rpr_from_run_info(run: RunInfo) -> OxmlElement:
+    rPr = OxmlElement("w:rPr")
+    if run.bold:
+        rPr.append(OxmlElement("w:b"))
+    if run.italic:
+        rPr.append(OxmlElement("w:i"))
+    if run.underline:
+        u = OxmlElement("w:u")
+        u.set(qn("w:val"), "single")
+        rPr.append(u)
+    if run.font_name:
+        fonts = OxmlElement("w:rFonts")
+        fonts.set(qn("w:ascii"), run.font_name)
+        fonts.set(qn("w:hAnsi"), run.font_name)
+        rPr.append(fonts)
+    if run.font_size_pt is not None:
+        half_pts = str(int(round(run.font_size_pt * 2)))
+        sz = OxmlElement("w:sz")
+        sz.set(qn("w:val"), half_pts)
+        rPr.append(sz)
+        szCs = OxmlElement("w:szCs")
+        szCs.set(qn("w:val"), half_pts)
+        rPr.append(szCs)
+    if run.font_color_rgb:
+        r, g, b = run.font_color_rgb
+        color = OxmlElement("w:color")
+        color.set(qn("w:val"), f"{r:02X}{g:02X}{b:02X}")
+        rPr.append(color)
+    return rPr
+
+
+def _append_t_to_run(r_elem: OxmlElement, text: str, *, del_text: bool = False) -> None:
+    tag = "w:delText" if del_text else "w:t"
+    t = OxmlElement(tag)
+    t.text = text
+    if text.startswith(" ") or text.endswith(" ") or "  " in text:
+        t.set(qn("xml:space"), "preserve")
+    r_elem.append(t)
+
+
+def _append_ins_run(
+    p_elem,
+    text: str,
+    rpr: OxmlElement | None,
+    counter: list[int],
+) -> None:
+    ins = OxmlElement("w:ins")
+    for k, v in _revision_attrs(counter).items():
+        ins.set(k, v)
+    r = OxmlElement("w:r")
+    if rpr is not None and len(rpr):
+        r.append(rpr)
+    _append_t_to_run(r, text)
+    ins.append(r)
+    p_elem.append(ins)
+
+
+def _append_del_run(
+    p_elem,
+    text: str,
+    rpr: OxmlElement | None,
+    counter: list[int],
+) -> None:
+    del_el = OxmlElement("w:del")
+    for k, v in _revision_attrs(counter).items():
+        del_el.set(k, v)
+    r = OxmlElement("w:r")
+    if rpr is not None and len(rpr):
+        r.append(rpr)
+    _append_t_to_run(r, text, del_text=True)
+    del_el.append(r)
+    p_elem.append(del_el)
+
+
+def _append_plain_run(p_elem, text: str, rpr: OxmlElement | None) -> None:
+    r = OxmlElement("w:r")
+    if rpr is not None and len(rpr):
+        r.append(rpr)
+    _append_t_to_run(r, text)
+    p_elem.append(r)
 
 
 def _add_formatted_run(
@@ -191,6 +319,18 @@ def _render_delete_in_place(paragraph):
         run.font.color.rgb = RED
 
 
+def _render_delete_in_place_track(paragraph, counter: list[int]) -> None:
+    base_rpr = _first_run_rpr_clone(paragraph)
+    text = paragraph.text
+    p_elem = paragraph._element
+    for child in list(p_elem):
+        if child.tag == qn("w:pPr"):
+            continue
+        p_elem.remove(child)
+    if text:
+        _append_del_run(p_elem, text, base_rpr, counter)
+
+
 def _render_modify_in_place(paragraph, diff: ParagraphDiff):
     base = _capture_base_run_formatting(paragraph)
 
@@ -224,6 +364,29 @@ def _render_modify_in_place(paragraph, diff: ParagraphDiff):
             run.font.size = Pt(base["font_size_pt"])
 
 
+def _render_modify_in_place_track(
+    paragraph, diff: ParagraphDiff, counter: list[int]
+) -> None:
+    base_rpr = _first_run_rpr_clone(paragraph)
+
+    p_elem = paragraph._element
+    for child in list(p_elem):
+        if child.tag == qn("w:pPr"):
+            continue
+        p_elem.remove(child)
+
+    for seg in diff.segments:
+        if seg.type == "equal":
+            if seg.text:
+                _append_plain_run(p_elem, seg.text, base_rpr)
+        elif seg.type == "delete":
+            if seg.text:
+                _append_del_run(p_elem, seg.text, base_rpr, counter)
+        elif seg.type == "insert":
+            if seg.text:
+                _append_ins_run(p_elem, seg.text, base_rpr, counter)
+
+
 def _render_formatting_in_place(paragraph, diff: ParagraphDiff):
     _apply_paragraph_formatting(paragraph, diff)
 
@@ -241,6 +404,64 @@ def _render_formatting_in_place(paragraph, diff: ParagraphDiff):
         if overlaps_change:
             run.font.highlight_color = WD_COLOR.YELLOW
         char_pos = run_end
+
+
+def _render_formatting_in_place_track(
+    paragraph, diff: ParagraphDiff, counter: list[int]
+) -> None:
+    base_rpr = _first_run_rpr_clone(paragraph)
+    _apply_paragraph_formatting(paragraph, diff)
+
+    p_elem = paragraph._element
+    for child in list(p_elem):
+        if child.tag == qn("w:pPr"):
+            continue
+        p_elem.remove(child)
+
+    oi = diff.original_info
+    ci = diff.changed_info
+
+    def _runs_del(runs: list[RunInfo]) -> None:
+        del_el = OxmlElement("w:del")
+        for k, v in _revision_attrs(counter).items():
+            del_el.set(k, v)
+        for ri in runs:
+            if not ri.text:
+                continue
+            r = OxmlElement("w:r")
+            rpr = _rpr_from_run_info(ri)
+            if len(rpr):
+                r.append(rpr)
+            _append_t_to_run(r, ri.text, del_text=True)
+            del_el.append(r)
+        if len(del_el):
+            p_elem.append(del_el)
+
+    def _runs_ins(runs: list[RunInfo]) -> None:
+        ins_el = OxmlElement("w:ins")
+        for k, v in _revision_attrs(counter).items():
+            ins_el.set(k, v)
+        for ri in runs:
+            if not ri.text:
+                continue
+            r = OxmlElement("w:r")
+            rpr = _rpr_from_run_info(ri)
+            if len(rpr):
+                r.append(rpr)
+            _append_t_to_run(r, ri.text)
+            ins_el.append(r)
+        if len(ins_el):
+            p_elem.append(ins_el)
+
+    if oi and oi.runs:
+        _runs_del(oi.runs)
+    elif oi and oi.text:
+        _append_del_run(p_elem, oi.text, base_rpr, counter)
+
+    if ci and ci.runs:
+        _runs_ins(ci.runs)
+    elif ci and ci.text:
+        _append_ins_run(p_elem, ci.text, base_rpr, counter)
 
 
 def _insert_paragraph_after(prev_element, diff: ParagraphDiff, doc: Document):
@@ -294,6 +515,70 @@ def _insert_paragraph_after(prev_element, diff: ParagraphDiff, doc: Document):
     r_elem.append(t)
 
     new_p.append(r_elem)
+
+    if prev_element is not None:
+        prev_element.addnext(new_p)
+    else:
+        body = doc.element.body
+        body.insert(0, new_p)
+
+    return new_p
+
+
+def _insert_paragraph_after_track(
+    prev_element, diff: ParagraphDiff, doc: Document, counter: list[int]
+):
+    new_p = OxmlElement("w:p")
+
+    info = diff.changed_info
+    if info:
+        pPr = OxmlElement("w:pPr")
+        if info.alignment:
+            align_map = {
+                "left": "left",
+                "center": "center",
+                "right": "right",
+                "justify": "both",
+            }
+            jc = OxmlElement("w:jc")
+            jc.set(qn("w:val"), align_map.get(info.alignment, "left"))
+            pPr.append(jc)
+        if info.space_before_pt is not None:
+            spacing = pPr.find(qn("w:spacing"))
+            if spacing is None:
+                spacing = OxmlElement("w:spacing")
+                pPr.append(spacing)
+            spacing.set(qn("w:before"), str(int(info.space_before_pt * 20)))
+        if info.space_after_pt is not None:
+            spacing = pPr.find(qn("w:spacing"))
+            if spacing is None:
+                spacing = OxmlElement("w:spacing")
+                pPr.append(spacing)
+            spacing.set(qn("w:after"), str(int(info.space_after_pt * 20)))
+        if pPr.findall("*"):
+            new_p.insert(0, pPr)
+
+    ins = OxmlElement("w:ins")
+    for k, v in _revision_attrs(counter).items():
+        ins.set(k, v)
+
+    if info and info.runs:
+        for ri in info.runs:
+            if not ri.text:
+                continue
+            r_elem = OxmlElement("w:r")
+            rpr = _rpr_from_run_info(ri)
+            if len(rpr):
+                r_elem.append(rpr)
+            _append_t_to_run(r_elem, ri.text)
+            ins.append(r_elem)
+    else:
+        text = info.text if info else ""
+        r_elem = OxmlElement("w:r")
+        _append_t_to_run(r_elem, text)
+        ins.append(r_elem)
+
+    new_p.append(ins)
 
     if prev_element is not None:
         prev_element.addnext(new_p)
@@ -766,18 +1051,29 @@ def generate_redline(
     original_path: str,
     changed_path: str,
     output_path: str,
+    *,
+    output_mode: str = "styled",
 ) -> None:
     from docx_redline.differ import compare_documents
+
+    if output_mode not in ("styled", "track_changes"):
+        raise ValueError(
+            f"output_mode must be 'styled' or 'track_changes', got {output_mode!r}"
+        )
 
     doc = Document(original_path)
 
     orig_paras = list(doc.paragraphs)
 
-    _insert_minimal_legend(doc)
+    if output_mode == "track_changes":
+        _enable_track_revisions(doc)
+    else:
+        _insert_minimal_legend(doc)
 
     diffs, changes = compare_documents(original_path, changed_path)
 
     last_element = None
+    rev_counter = [0]
 
     for diff in diffs:
         if diff.type == "equal":
@@ -789,25 +1085,39 @@ def generate_redline(
             oi = diff.original_para_index
             if oi is not None and oi < len(orig_paras):
                 para = orig_paras[oi]
-                _render_delete_in_place(para)
+                if output_mode == "track_changes":
+                    _render_delete_in_place_track(para, rev_counter)
+                else:
+                    _render_delete_in_place(para)
                 last_element = para._element
 
         elif diff.type == "modify":
             oi = diff.original_para_index
             if oi is not None and oi < len(orig_paras):
                 para = orig_paras[oi]
-                _render_modify_in_place(para, diff)
+                if output_mode == "track_changes":
+                    _render_modify_in_place_track(para, diff, rev_counter)
+                else:
+                    _render_modify_in_place(para, diff)
                 last_element = para._element
 
         elif diff.type == "formatting":
             oi = diff.original_para_index
             if oi is not None and oi < len(orig_paras):
                 para = orig_paras[oi]
-                _render_formatting_in_place(para, diff)
+                if output_mode == "track_changes":
+                    _render_formatting_in_place_track(para, diff, rev_counter)
+                else:
+                    _render_formatting_in_place(para, diff)
                 last_element = para._element
 
         elif diff.type == "insert":
-            new_elem = _insert_paragraph_after(last_element, diff, doc)
+            if output_mode == "track_changes":
+                new_elem = _insert_paragraph_after_track(
+                    last_element, diff, doc, rev_counter
+                )
+            else:
+                new_elem = _insert_paragraph_after(last_element, diff, doc)
             last_element = new_elem
 
     _render_change_report(doc, changes)
