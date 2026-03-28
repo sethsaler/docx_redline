@@ -7,7 +7,10 @@ name = "docx-redline"
 version = "1.0.0"
 description = "CLI tool for redlining .docx files with word-level diff and change report"
 requires-python = ">=3.9"
-dependencies = ["python-docx>=1.1.0"]
+dependencies = [
+    "python-docx>=1.1.0",
+    "tkinterdnd2>=0.4.0",
+]
 
 [project.scripts]
 docx-redline = "docx_redline.cli:main"
