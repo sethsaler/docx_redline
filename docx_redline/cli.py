@@ -21,6 +21,15 @@ def main(argv: Optional[List[str]] = None):
         default=None,
         help="Path for the output redlined .docx file (default: redline_<original>_vs_<changed>.docx)",
     )
+    parser.add_argument(
+        "--mode",
+        choices=("styled", "track_changes"),
+        default="styled",
+        help=(
+            "styled: merge diff with red underline/strike and a change report (default). "
+            "track_changes: apply edits as Word revision markup (w:ins/w:del) on the original."
+        ),
+    )
 
     args = parser.parse_args(argv)
 
@@ -43,7 +52,8 @@ def main(argv: Optional[List[str]] = None):
     else:
         orig_base = os.path.splitext(os.path.basename(args.original))[0]
         changed_base = os.path.splitext(os.path.basename(args.changed))[0]
-        output_path = f"redline_{orig_base}_vs_{changed_base}.docx"
+        suffix = "_tracked" if args.mode == "track_changes" else ""
+        output_path = f"redline_{orig_base}_vs_{changed_base}{suffix}.docx"
 
     print(f"Comparing:")
     print(f"  Original: {args.original}")
@@ -51,7 +61,9 @@ def main(argv: Optional[List[str]] = None):
     print()
 
     try:
-        generate_redline(args.original, args.changed, output_path)
+        generate_redline(
+            args.original, args.changed, output_path, output_mode=args.mode
+        )
     except Exception as e:
         print(f"Error generating redline: {e}", file=sys.stderr)
         sys.exit(1)

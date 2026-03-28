@@ -24,9 +24,16 @@ def validate_docx_input_path(path: str) -> None:
         raise ValueError("File must be a .docx file.")
 
 
-def default_output_path(original_path: str, changed_path: str, cwd: str | None = None) -> str:
-    """Default redline output filename next to ``cwd`` (or current directory)."""
+def default_output_path(
+    original_path: str,
+    changed_path: str,
+    cwd: str | None = None,
+    *,
+    track_changes: bool = False,
+) -> str:
+    """Default output filename next to ``cwd`` (or current directory)."""
     base = cwd if cwd is not None else os.getcwd()
     orig_base = os.path.splitext(os.path.basename(original_path))[0]
     changed_base = os.path.splitext(os.path.basename(changed_path))[0]
-    return os.path.join(base, f"redline_{orig_base}_vs_{changed_base}.docx")
+    suffix = "_tracked" if track_changes else ""
+    return os.path.join(base, f"redline_{orig_base}_vs_{changed_base}{suffix}.docx")

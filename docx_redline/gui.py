@@ -22,11 +22,18 @@ def _run_gui_window() -> None:
         if path:
             var.set(path)
 
-    def _browse_save(var: tk.StringVar, original: str | None, changed: str | None) -> None:
+    def _browse_save(
+        var: tk.StringVar,
+        original: str | None,
+        changed: str | None,
+        track_changes: bool,
+    ) -> None:
         initial = var.get().strip() or None
         if not initial and original and changed:
             try:
-                initial = default_output_path(original, changed)
+                initial = default_output_path(
+                    original, changed, track_changes=track_changes
+                )
             except Exception:
                 initial = None
         path = filedialog.asksaveasfilename(
@@ -41,12 +48,13 @@ def _run_gui_window() -> None:
 
     root = tk.Tk()
     root.title("DOCX Redline Comparison")
-    root.minsize(520, 220)
+    root.minsize(520, 280)
 
     pad = {"padx": 10, "pady": 6}
     original_var = tk.StringVar()
     changed_var = tk.StringVar()
     output_var = tk.StringVar()
+    output_mode_var = tk.StringVar(value="styled")
 
     frm = ttk.Frame(root, padding=12)
     frm.grid(row=0, column=0, sticky="nsew")
@@ -75,12 +83,28 @@ def _run_gui_window() -> None:
             output_var,
             original_var.get().strip() or None,
             changed_var.get().strip() or None,
+            output_mode_var.get() == "track_changes",
         ),
     ).grid(row=2, column=2, **pad)
 
+    mode_frm = ttk.LabelFrame(frm, text="Output mode", padding=(8, 6))
+    mode_frm.grid(row=3, column=0, columnspan=3, sticky="ew", **pad)
+    ttk.Radiobutton(
+        mode_frm,
+        text="Styled redline (underline / strike + change report)",
+        variable=output_mode_var,
+        value="styled",
+    ).grid(row=0, column=0, sticky="w")
+    ttk.Radiobutton(
+        mode_frm,
+        text="Track changes (Word revision markup on the original)",
+        variable=output_mode_var,
+        value="track_changes",
+    ).grid(row=1, column=0, sticky="w")
+
     status_var = tk.StringVar(value="Choose two documents, then click Generate redline.")
     ttk.Label(frm, textvariable=status_var, wraplength=480).grid(
-        row=3, column=0, columnspan=3, sticky="w", **pad
+        row=4, column=0, columnspan=3, sticky="w", **pad
     )
 
     def on_generate() -> None:
@@ -104,8 +128,11 @@ def _run_gui_window() -> None:
             messagebox.showerror("Invalid input", str(e))
             return
 
+        track_changes = output_mode_var.get() == "track_changes"
         if not out_raw:
-            out_raw = default_output_path(original, changed)
+            out_raw = default_output_path(
+                original, changed, track_changes=track_changes
+            )
             output_var.set(out_raw)
 
         try:
@@ -126,7 +153,12 @@ def _run_gui_window() -> None:
         root.update_idletasks()
 
         try:
-            generate_redline(original, changed, output)
+            generate_redline(
+                original,
+                changed,
+                output,
+                output_mode="track_changes" if track_changes else "styled",
+            )
         except Exception as e:
             status_var.set("Ready.")
             messagebox.showerror("Error", f"Could not generate redline:\n{e}")
@@ -136,7 +168,7 @@ def _run_gui_window() -> None:
         messagebox.showinfo("Done", f"Redline saved to:\n{output}")
 
     btn_row = ttk.Frame(frm)
-    btn_row.grid(row=4, column=0, columnspan=3, sticky="e", **pad)
+    btn_row.grid(row=5, column=0, columnspan=3, sticky="e", **pad)
     ttk.Button(btn_row, text="Generate redline", command=on_generate).pack(side=tk.RIGHT)
 
     root.bind("<Return>", lambda e: on_generate())

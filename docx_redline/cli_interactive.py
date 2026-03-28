@@ -30,7 +30,14 @@ def main():
     original = _prompt_file("Original file path (the before version)")
     changed = _prompt_file("Changed file path  (the after version)")
 
-    default_output = default_output_path(original, changed)
+    print()
+    print("Output mode:")
+    print("  1) Styled redline (underline/strike + change report) [default]")
+    print("  2) Track changes (Word revision markup on the original)")
+    mode_choice = input("Choose 1 or 2 [1]: ").strip().lower()
+    track_changes = mode_choice in ("2", "t", "track", "track_changes")
+
+    default_output = default_output_path(original, changed, track_changes=track_changes)
 
     print()
     output = input(f"Output file path [{default_output}]: ").strip()
@@ -50,7 +57,12 @@ def main():
     print()
 
     try:
-        generate_redline(original, changed, output)
+        generate_redline(
+            original,
+            changed,
+            output,
+            output_mode="track_changes" if track_changes else "styled",
+        )
     except Exception as e:
         print(f"Error generating redline: {e}", file=sys.stderr)
         print()
