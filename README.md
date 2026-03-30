@@ -23,13 +23,25 @@ The installer tries **git clone** first; if that fails (VPN, firewall, or corpor
 
 Once installed, launch it anytime by double-clicking **`run.command`** in the `docx_redline` folder.
 
+### Updates
+
+You do **not** need to run the curl installer again. From the `docx_redline` folder on your Desktop:
+
+- **Double-click** **`update.command`**, or in Terminal run:
+  ```bash
+  cd ~/Desktop/docx_redline
+  bash update.sh
+  ```
+
+That pulls the latest code (via **git** if the folder was installed with git, otherwise a **ZIP** download like the installer) and runs **`setup.sh`** again so your virtual environment matches the new version. Your **`.venv`** is kept.
+
 ---
 
 ## Troubleshooting
 
 **“The graphical file picker requires Tk (tkinter)”** — Your Python was built without Tk. Install a Python that includes Tcl/Tk (the official macOS installer from [python.org](https://www.python.org/downloads/) does), or on Linux install `python3-tk`, then delete the project’s `.venv` folder and run `bash setup.sh` again.
 
-**Git or curl install errors** — If `git clone` fails, use the latest `install.sh` from this repo (it falls back to ZIP). You can also download the ZIP manually: open `https://github.com/sethsaler/docx_redline/archive/refs/heads/main.zip`, unzip it, rename the folder to `docx_redline` on your Desktop, and run `bash setup.sh` inside it.
+**Git or curl install errors** — If `git clone` fails, use the latest `install.sh` from this repo (it falls back to ZIP). You can also download the ZIP manually: open `https://github.com/sethsaler/docx_redline/archive/refs/heads/main.zip`, unzip it, rename the folder to `docx_redline` on your Desktop, and run `bash setup.sh` inside it. After a successful install, use **`update.command`** or **`bash update.sh`** to refresh—no curl needed.
 
 ---
 
@@ -80,6 +92,8 @@ docx_redline/
 ├── docx_redline/          Python package source
 ├── setup.sh               One-time installer
 ├── install.sh             Bootstrap script (for curl install)
+├── update.sh              Refresh from GitHub and re-run setup (no curl needed)
+├── update.command         Double-click to update
 ├── run.command            Double-click to launch
 ├── pyproject.toml         Package metadata
 └── README.md
