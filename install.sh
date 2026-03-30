@@ -52,7 +52,7 @@ download_via_zip() {
 if command -v git &>/dev/null; then
     echo "Downloading via git..."
     if git clone --depth 1 "https://github.com/${REPO}.git" "$DEST" 2>/dev/null; then
-        rm -rf "$DEST/.git"
+        :
     else
         echo ""
         echo -e "${YELLOW}Git clone failed (offline VPN, firewall, or GitHub blocked).${RESET}"
