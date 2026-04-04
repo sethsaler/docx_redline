@@ -9,6 +9,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
+from docx_redline.doc_walk import list_redline_paragraphs
 from docx_redline.differ import Change, ChangeType, DiffSegment, ParagraphDiff, RunInfo
 
 RED = RGBColor(0xFF, 0x00, 0x00)
@@ -1063,7 +1064,7 @@ def generate_redline(
 
     doc = Document(original_path)
 
-    orig_paras = list(doc.paragraphs)
+    orig_paras = [p for p, _ in list_redline_paragraphs(doc)]
 
     if output_mode == "track_changes":
         _enable_track_revisions(doc)
