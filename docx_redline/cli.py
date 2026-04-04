@@ -5,13 +5,29 @@ import os
 import sys
 from typing import List, Optional
 
+from docx.exceptions import InvalidXmlError, PythonDocxError
+
 from docx_redline.formatter import generate_redline
+
+
+def _package_version() -> str:
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+
+        return version("docx-redline")
+    except (ImportError, PackageNotFoundError):
+        return "unknown"
 
 
 def main(argv: Optional[List[str]] = None):
     parser = argparse.ArgumentParser(
         prog="docx-redline",
         description="Generate a redlined comparison of two .docx files.",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {_package_version()}",
     )
     parser.add_argument("original", help="Path to the original .docx file")
     parser.add_argument("changed", help="Path to the modified .docx file")
@@ -20,6 +36,18 @@ def main(argv: Optional[List[str]] = None):
         "--output",
         default=None,
         help="Path for the output redlined .docx file (default: redline_<original>_vs_<changed>.docx)",
+    )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Print only errors and the final output path.",
+    )
+    parser.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="Overwrite the output file if it already exists.",
     )
     parser.add_argument(
         "--mode",
@@ -55,17 +83,37 @@ def main(argv: Optional[List[str]] = None):
         suffix = "_tracked" if args.mode == "track_changes" else ""
         output_path = f"redline_{orig_base}_vs_{changed_base}{suffix}.docx"
 
-    print(f"Comparing:")
-    print(f"  Original: {args.original}")
-    print(f"  Modified: {args.changed}")
-    print()
+    if os.path.exists(output_path) and not args.force:
+        print(
+            f"Error: output file already exists: {output_path} (use --force to overwrite)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if not args.quiet:
+        print("Comparing:")
+        print(f"  Original: {args.original}")
+        print(f"  Modified: {args.changed}")
+        print()
 
     try:
         generate_redline(
             args.original, args.changed, output_path, output_mode=args.mode
         )
-    except Exception as e:
-        print(f"Error generating redline: {e}", file=sys.stderr)
+    except (InvalidXmlError, PythonDocxError) as e:
+        print(
+            f"Error: could not read Word document (invalid or corrupt .docx): {e}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    except PermissionError as e:
+        print(f"Error: permission denied: {e}", file=sys.stderr)
+        sys.exit(1)
+    except OSError as e:
+        print(f"Error: could not write output: {e}", file=sys.stderr)
+        sys.exit(1)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
     print(f"Redline saved to: {output_path}")

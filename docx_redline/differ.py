@@ -31,6 +31,7 @@ class RunInfo:
 @dataclass
 class ParagraphInfo:
     text: str
+    location_desc: str = "Body"
     runs: list[RunInfo] = field(default_factory=list)
     alignment: str | None = None
     space_before_pt: float | None = None
@@ -64,6 +65,7 @@ class ParagraphDiff:
     type: str  # "equal", "insert", "delete", "modify", "formatting"
     original_info: ParagraphInfo | None = None
     changed_info: ParagraphInfo | None = None
+    location_desc: str = ""
     segments: list[DiffSegment] = field(default_factory=list)
     formatting_changes: list[str] = field(default_factory=list)
     has_run_formatting_changes: bool = False
@@ -139,7 +141,7 @@ def _extract_style_name(paragraph) -> str | None:
     return None
 
 
-def _extract_paragraph_info(paragraph, index: int) -> ParagraphInfo:
+def _extract_paragraph_info(paragraph, location_desc: str) -> ParagraphInfo:
     pf = paragraph.paragraph_format
 
     space_before = None
@@ -158,6 +160,7 @@ def _extract_paragraph_info(paragraph, index: int) -> ParagraphInfo:
 
     return ParagraphInfo(
         text=paragraph.text,
+        location_desc=location_desc,
         runs=_extract_runs(paragraph),
         alignment=_extract_alignment(paragraph),
         space_before_pt=space_before,
@@ -168,8 +171,17 @@ def _extract_paragraph_info(paragraph, index: int) -> ParagraphInfo:
     )
 
 
+def extract_paragraph_infos(doc: Document) -> list[ParagraphInfo]:
+    from docx_redline.doc_walk import list_redline_paragraphs
+
+    return [
+        _extract_paragraph_info(p, loc) for p, loc in list_redline_paragraphs(doc)
+    ]
+
+
 def extract_paragraphs(doc: Document) -> list[ParagraphInfo]:
-    return [_extract_paragraph_info(p, i) for i, p in enumerate(doc.paragraphs)]
+    """Backward-compatible alias for :func:`extract_paragraph_infos`."""
+    return extract_paragraph_infos(doc)
 
 
 def _tokenize(text: str) -> list[WordToken]:
@@ -350,6 +362,7 @@ def align_paragraphs(
                             type="formatting",
                             original_info=orig_paras[oi],
                             changed_info=changed_paras[ci],
+                            location_desc=orig_paras[oi].location_desc,
                             formatting_changes=fmt_changes,
                             has_run_formatting_changes=has_run_changes,
                             run_formatting_ranges=run_ranges,
@@ -366,6 +379,7 @@ def align_paragraphs(
                             type="equal",
                             original_info=orig_paras[oi],
                             changed_info=changed_paras[ci],
+                            location_desc=orig_paras[oi].location_desc,
                             segments=[
                                 DiffSegment(text=orig_paras[oi].text, type="equal")
                             ],
@@ -400,6 +414,7 @@ def align_paragraphs(
                                     type="formatting",
                                     original_info=orig_paras[oi],
                                     changed_info=changed_paras[ci],
+                                    location_desc=orig_paras[oi].location_desc,
                                     formatting_changes=fmt_changes,
                                     has_run_formatting_changes=has_run_changes,
                                     run_formatting_ranges=run_ranges,
@@ -418,6 +433,7 @@ def align_paragraphs(
                                     type="equal",
                                     original_info=orig_paras[oi],
                                     changed_info=changed_paras[ci],
+                                    location_desc=orig_paras[oi].location_desc,
                                     segments=[
                                         DiffSegment(
                                             text=orig_paras[oi].text, type="equal"
@@ -436,6 +452,7 @@ def align_paragraphs(
                                 type="modify",
                                 original_info=orig_paras[oi],
                                 changed_info=None,
+                                location_desc=orig_paras[oi].location_desc,
                                 original_para_index=oi,
                             )
                         )
@@ -446,6 +463,7 @@ def align_paragraphs(
                             ParagraphDiff(
                                 type="delete",
                                 original_info=orig_paras[oi],
+                                location_desc=orig_paras[oi].location_desc,
                                 original_para_index=oi,
                             )
                         )
@@ -456,17 +474,19 @@ def align_paragraphs(
                             ParagraphDiff(
                                 type="insert",
                                 changed_info=changed_paras[ci],
+                                location_desc=changed_paras[ci].location_desc,
                                 changed_para_index=ci,
                             )
                         )
                         used_changed.add(ci)
 
-            for k, ci in enumerate(range(j1, j2)):
+            for ci in range(j1, j2):
                 if ci not in used_changed:
                     diffs.append(
                         ParagraphDiff(
                             type="insert",
                             changed_info=changed_paras[ci],
+                            location_desc=changed_paras[ci].location_desc,
                             changed_para_index=ci,
                         )
                     )
@@ -478,6 +498,7 @@ def align_paragraphs(
                     ParagraphDiff(
                         type="delete",
                         original_info=orig_paras[oi],
+                        location_desc=orig_paras[oi].location_desc,
                         original_para_index=oi,
                     )
                 )
@@ -489,11 +510,48 @@ def align_paragraphs(
                     ParagraphDiff(
                         type="insert",
                         changed_info=changed_paras[ci],
+                        location_desc=changed_paras[ci].location_desc,
                         changed_para_index=ci,
                     )
                 )
 
     return diffs
+
+
+def _norm_para_text(s: str) -> str:
+    return " ".join(s.split())
+
+
+def _build_norm_text_index(changed_paras: list[ParagraphInfo]) -> dict[str, list[int]]:
+    idx_by_norm: dict[str, list[int]] = {}
+    for i, p in enumerate(changed_paras):
+        idx_by_norm.setdefault(_norm_para_text(p.text), []).append(i)
+    return idx_by_norm
+
+
+def _modify_match_candidates(
+    orig_para: ParagraphInfo,
+    changed_paras: list[ParagraphInfo],
+    consumed_changed: set[int],
+    idx_by_norm: dict[str, list[int]],
+) -> list[int]:
+    """Narrow candidate changed paragraphs before running SequenceMatcher."""
+    all_free = [i for i in range(len(changed_paras)) if i not in consumed_changed]
+    if not all_free:
+        return []
+
+    orig_norm = _norm_para_text(orig_para.text)
+    exact = [i for i in idx_by_norm.get(orig_norm, []) if i not in consumed_changed]
+    if exact:
+        return exact
+
+    olen = max(len(orig_para.text), 1)
+    narrowed = [
+        i
+        for i in all_free
+        if 0.25 <= max(len(changed_paras[i].text), 1) / olen <= 4.0
+    ]
+    return narrowed if narrowed else all_free
 
 
 def resolve_modifications(
@@ -503,6 +561,7 @@ def resolve_modifications(
 ) -> list[ParagraphDiff]:
     result = []
     consumed_changed: set[int] = set()
+    idx_by_norm = _build_norm_text_index(changed_paras)
 
     for d in diffs:
         if d.type == "modify":
@@ -510,9 +569,10 @@ def resolve_modifications(
             best_match_idx = None
             best_ratio = 0.3
 
-            for ci in range(len(changed_paras)):
-                if ci in consumed_changed:
-                    continue
+            search = _modify_match_candidates(
+                orig_para, changed_paras, consumed_changed, idx_by_norm
+            )
+            for ci in search:
                 ratio = difflib.SequenceMatcher(
                     None, orig_para.text, changed_paras[ci].text
                 ).ratio()
@@ -571,7 +631,7 @@ def _build_change_list(diffs: list[ParagraphDiff]) -> list[Change]:
 
     for d in diffs:
         para_counter += 1
-        loc = f"Paragraph {para_counter}"
+        loc = d.location_desc or f"Block {para_counter}"
 
         if d.type == "insert":
             changes.append(
@@ -645,8 +705,8 @@ def compare_documents(
     orig_doc = Document(original_path)
     changed_doc = Document(changed_path)
 
-    orig_paras = extract_paragraphs(orig_doc)
-    changed_paras = extract_paragraphs(changed_doc)
+    orig_paras = extract_paragraph_infos(orig_doc)
+    changed_paras = extract_paragraph_infos(changed_doc)
 
     diffs = align_paragraphs(orig_paras, changed_paras)
     diffs = resolve_modifications(diffs, orig_paras, changed_paras)
