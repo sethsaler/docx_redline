@@ -8,6 +8,7 @@ from typing import List, Optional
 from docx.exceptions import InvalidXmlError, PythonDocxError
 
 from docx_redline.formatter import generate_redline
+from docx_redline.paths import default_output_path, normalize_user_path
 
 
 def _package_version() -> str:
@@ -35,7 +36,10 @@ def main(argv: Optional[List[str]] = None):
         "-o",
         "--output",
         default=None,
-        help="Path for the output redlined .docx file (default: redline_<original>_vs_<changed>.docx)",
+        help=(
+            "Path for the output redlined .docx file "
+            "(default: ~/Desktop/Redlines/<original_stem>_redlines.docx)"
+        ),
     )
     parser.add_argument(
         "-q",
@@ -76,12 +80,13 @@ def main(argv: Optional[List[str]] = None):
         sys.exit(1)
 
     if args.output:
-        output_path = args.output
+        output_path = normalize_user_path(args.output)
     else:
-        orig_base = os.path.splitext(os.path.basename(args.original))[0]
-        changed_base = os.path.splitext(os.path.basename(args.changed))[0]
-        suffix = "_tracked" if args.mode == "track_changes" else ""
-        output_path = f"redline_{orig_base}_vs_{changed_base}{suffix}.docx"
+        output_path = default_output_path(
+            args.original,
+            args.changed,
+            track_changes=args.mode == "track_changes",
+        )
 
     if os.path.exists(output_path) and not args.force:
         print(

@@ -4,7 +4,12 @@ import os
 import sys
 
 from docx_redline.formatter import generate_redline
-from docx_redline.paths import default_output_path, normalize_user_path, validate_docx_input_path
+from docx_redline.paths import (
+    default_output_path,
+    ensure_parent_dir,
+    normalize_user_path,
+    validate_docx_input_path,
+)
 
 
 def _run_gui_window() -> None:
@@ -141,11 +146,12 @@ def _run_gui_window() -> None:
             messagebox.showerror("Invalid output path", str(e))
             return
 
-        parent = os.path.dirname(output)
-        if parent and not os.path.isdir(parent):
+        try:
+            ensure_parent_dir(output)
+        except OSError as e:
             messagebox.showerror(
                 "Invalid output path",
-                f"Output folder does not exist:\n{parent}",
+                f"Could not create output folder:\n{e}",
             )
             return
 

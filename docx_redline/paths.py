@@ -13,6 +13,20 @@ def normalize_user_path(path: str) -> str:
     return os.path.abspath(path)
 
 
+def redlines_desktop_dir() -> str:
+    """Return ``~/Desktop/Redlines``, creating the directory if it does not exist."""
+    d = os.path.join(os.path.expanduser("~/Desktop"), "Redlines")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def ensure_parent_dir(path: str) -> None:
+    """Create the parent directory of ``path`` if needed (no-op for bare filenames)."""
+    parent = os.path.dirname(os.path.abspath(path))
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
+
 def validate_docx_input_path(path: str) -> None:
     """
     Ensure ``path`` refers to an existing .docx file.
@@ -31,9 +45,14 @@ def default_output_path(
     *,
     track_changes: bool = False,
 ) -> str:
-    """Default output filename next to ``cwd`` (or current directory)."""
-    base = cwd if cwd is not None else os.getcwd()
+    """
+    Default output path: ``~/Desktop/Redlines/<original_stem>_redlines.docx``.
+
+    ``changed_path`` and ``cwd`` are ignored but kept for backward-compatible
+    call sites; the filename uses only the original document's base name.
+    """
+    _ = (changed_path, cwd)
+    base = redlines_desktop_dir()
     orig_base = os.path.splitext(os.path.basename(original_path))[0]
-    changed_base = os.path.splitext(os.path.basename(changed_path))[0]
     suffix = "_tracked" if track_changes else ""
-    return os.path.join(base, f"redline_{orig_base}_vs_{changed_base}{suffix}.docx")
+    return os.path.join(base, f"{orig_base}_redlines{suffix}.docx")

@@ -11,6 +11,7 @@ from docx.shared import Inches, Pt, RGBColor
 
 from docx_redline.doc_walk import list_redline_paragraphs
 from docx_redline.differ import Change, ChangeType, DiffSegment, ParagraphDiff, RunInfo
+from docx_redline.paths import ensure_parent_dir
 
 RED = RGBColor(0xFF, 0x00, 0x00)
 DARK_GRAY = RGBColor(0x33, 0x33, 0x33)
@@ -1123,4 +1124,5 @@ def generate_redline(
 
     _render_change_report(doc, changes)
 
+    ensure_parent_dir(output_path)
     doc.save(output_path)
